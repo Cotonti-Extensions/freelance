@@ -256,10 +256,8 @@ function cot_generate_projecttags($item_data, $tag_prefix = '', $textlength = 0,
 		$item_data = $sql->fetch();
 	}
 
-	if ($item_data['item_id'] > 0 && !empty($item_data['item_title']))
-	{
-		if (is_null($admin_rights))
-		{
+	if (!empty($item_data) && $item_data['item_id'] > 0 && !empty($item_data['item_title'])) {
+		if (is_null($admin_rights)) {
 			$admin_rights = cot_auth('projects', $item_data['item_cat'], 'A');
 		}
 

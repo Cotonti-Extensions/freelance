@@ -9,7 +9,7 @@
 			<div class="well">
 				<table class="table customform">
 					<tr>
-						<td class="width30"><b>{PHP.L.sbr_title}</b></td>
+						<td class="width30"><b>{PHP.L.sbr_sbrTitle}</b></td>
 						<td class="width70">{SBRADD_FORM_MAINTITLE}</td>
 					</tr>
 					<tr>
@@ -119,7 +119,7 @@
 		$('#sbrform').bind('change click keyup', function (){
 			var stagescost = 0;
 			var taxsumm = 0;
-			var tax = {PHP.cfg.plugin.sbr.tax};
+			var tax = {PHP.cfg.plugin.sbr.tax|intval($this)};
 			$('.stagecost').each(function(i) {
 				var stagecost = parseInt($(this).val());
 				stagecost = (stagecost > 0) ? stagecost : 0;
@@ -184,6 +184,7 @@
 	function StageFileAdd(obj)
 	{
 		var stagenum = $(obj).closest('.stageblock').find('.stagenum').text();
+        console.log(stagenum);
 		$(obj).parent().children('.fileslist').append('<li>\n\
 			<a href="javascript:void(0);" onclick="StageFileRemove(this); return false;" class="pull-right"><i class="icon icon-remove"></i></a>\n\
 			<input type="file" name="rstagefiles[' + stagenum + '][]" />\n\

@@ -745,7 +745,7 @@ if (empty($action)) {
         'STAGES_COUNT' => $stagesCount,
 	]);
 	
-	cot_display_messages($t, 'MAIN.SBR.POSTS.POSTFORM');
+	// cot_display_messages($t, 'MAIN.SBR.POSTS.POSTFORM');
 	
 	$t->parse('MAIN.SBR.POSTS.POSTFORM');
 
@@ -757,6 +757,8 @@ if (empty($action)) {
 		include $pl;
 	}
 	/* ===== */
+
+    cot_display_messages($t, 'MAIN.SBR');
 
 	$t->parse('MAIN.SBR');
 }

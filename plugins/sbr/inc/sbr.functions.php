@@ -1,14 +1,14 @@
 <?php
-
 /**
- * Sbr plugin
+ * Safe deal service
  *
  * @package sbr
- * @version 1.0.0
- * @author CMSWorks Team
- * @copyright Copyright (c) CMSWorks.ru
+ * @author CMSWorks Team, Cototnti team
+ * @copyright Copyright (c) CMSWorks.ru, Cototnti team
  * @license BSD
  */
+
+use cot\plugins\sbr\inc\SbrFileService;
 
 defined('COT_CODE') or die('Wrong URL');
 
@@ -19,14 +19,13 @@ require_once cot_incfile('sbr', 'plug', 'resources');
 global $db_sbr, $db_sbr_stages, $db_sbr_claims, $db_x;
 
 // Register tables
-cot::$db->registerTable('sbr');
-cot::$db->registerTable('sbr_stages');
-cot::$db->registerTable('sbr_posts');
-cot::$db->registerTable('sbr_claims');
-cot::$db->registerTable('sbr_files');
+Cot::$db->registerTable('sbr');
+Cot::$db->registerTable('sbr_stages');
+Cot::$db->registerTable('sbr_posts');
+Cot::$db->registerTable('sbr_claims');
+Cot::$db->registerTable('sbr_files');
 
 cot_extrafields_register_table('sbr');
-
 
 function cot_generate_sbrtags($item_data, $tag_prefix = '', $admin_rights = null, $pagepath_home = false)
 {
@@ -172,8 +171,10 @@ function cot_sbr_sendpost($id, $text, $to, $from = 0, $type = '', $mail = false,
 			mkdir($sbr_path, cot::$cfg['dir_perms'], true);
 		}
 
-		for($j = 0; $j < 10; $j++) {
-			if ($rfiles['size'][$j] > 0 && $rfiles['error'][$j] == 0) {
+        $fileService = SbrFileService::getInstance();
+
+		for ($j = 0; $j < 10; $j++) {
+			if (isset($rfiles['tmp_name'][$j]) && $rfiles['size'][$j] > 0 && $rfiles['error'][$j] == 0) {
 				$u_tmp_name_file = $rfiles['tmp_name'][$j];
 				$u_type_file = $rfiles['type'][$j];
 				$u_name_file = $rfiles['name'][$j];
@@ -184,29 +185,33 @@ function cot_sbr_sendpost($id, $text, $to, $from = 0, $type = '', $mail = false,
 				$dotpos = strrpos($u_name_file,".")+1;
 				$f_extension = substr($u_name_file, $dotpos, 5);
 
-				if(!empty($u_tmp_name_file))
-				{
-					$fcheck = cot_file_check($u_tmp_name_file, $u_name_file, $f_extension);
-					if($fcheck == 1){
-						if(in_array($f_extension, explode(',', $cfg['plugin']['sbr']['extensions'])))
-						{
-							$u_newname_file = $postid."_".md5(uniqid(rand(),true)).".".$f_extension;
-							$file = $sbr_path . $u_newname_file;
+				if (!empty($u_tmp_name_file)) {
+                    $result = $fileService->validateUploadedFile($u_tmp_name_file, $u_name_file);
+                    if ($result !== true) {
+                        cot_error(
+                            cot_rc(
+                                Cot::$L['sbr_error_uploadFile'],
+                                ['name' => $u_name_file, 'error' => $result]
+                            )
+                        );
+                        continue;
+                    }
 
-							move_uploaded_file($u_tmp_name_file, $file);
-							@chmod($file, 0766);
+                    $u_newname_file = $postid."_".md5(uniqid(rand(),true)).".".$f_extension;
+                    $file = $sbr_path . $u_newname_file;
 
-							$rfile['file_sid'] = $id;
-							$rfile['file_url'] = $file;
-							$rfile['file_title'] = $u_name_file;
-							$rfile['file_area'] = 'post';
-							$rfile['file_code'] = $postid;
-							$rfile['file_ext'] = $f_extension;
-							$rfile['file_size'] = floor($u_size_file / 1024);
+                    move_uploaded_file($u_tmp_name_file, $file);
+                    @chmod($file, 0766);
 
-							$db->insert($db_sbr_files, $rfile);
-						}
-					}
+                    $rfile['file_sid'] = $id;
+                    $rfile['file_url'] = $file;
+                    $rfile['file_title'] = $u_name_file;
+                    $rfile['file_area'] = 'post';
+                    $rfile['file_code'] = $postid;
+                    $rfile['file_ext'] = $f_extension;
+                    $rfile['file_size'] = floor($u_size_file / 1024);
+
+                    $db->insert($db_sbr_files, $rfile);
 				}
 			}
 		}
@@ -283,12 +288,16 @@ function cot_validate_stages(&$rstagetitle, &$rstagetext, $purifier = false)
 	// Если включен плагин htmlpurifier, то очищаем через него
 	if ($purifier === true) {
 		if (cot_plugin_active('htmlpurifier') && function_exists('htmlpurifier_filter')) {
-			foreach ($rstagetitle as $key => $value) {
-				$rstagetitle[$key] = htmlpurifier_filter($value, false);
-			}
-			foreach ($rstagetext as $key => $value) {
-				$rstagetext[$key] = htmlpurifier_filter($value, false);
-			}
+            if (!empty($rstagetitle)) {
+                foreach ($rstagetitle as $key => $value) {
+                    $rstagetitle[$key] = htmlpurifier_filter($value, false);
+                }
+            }
+            if (!empty($rstagetext)) {
+                foreach ($rstagetext as $key => $value) {
+                    $rstagetext[$key] = htmlpurifier_filter($value, false);
+                }
+            }
 		} else {
 			error_log('Попытка функции cot_validate_stages валидировать title и text с помощью неактивного плагина htmlpurifier');
 			return false;
@@ -296,11 +305,15 @@ function cot_validate_stages(&$rstagetitle, &$rstagetext, $purifier = false)
 	}
 	// Иначе производим замену наподобии cot_import с фильтром 'TXT'
 	else {
-		foreach ($rstagetitle as $key => $value) {
-			$rstagetitle[$key] = str_replace('<', '&lt;', trim($value));
-		}
-		foreach ($rstagetext as $key => $value) {
-			$rstagetext[$key] = str_replace('<', '&lt;', trim($value));
-		}
+        if (!empty($rstagetitle)) {
+            foreach ($rstagetitle as $key => $value) {
+                $rstagetitle[$key] = str_replace('<', '&lt;', trim($value));
+            }
+        }
+        if (!empty($rstagetext)) {
+            foreach ($rstagetext as $key => $value) {
+                $rstagetext[$key] = str_replace('<', '&lt;', trim($value));
+            }
+        }
 	}
 }

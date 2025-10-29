@@ -1,15 +1,14 @@
 <?php
-
 /* ====================
  * [BEGIN_COT_EXT]
  * Code=sbr
  * Name=Sbr
  * Category=Payments
- * Description=Сделки
- * Version=1.0.8
- * Date=
- * Author=CMSWorks Team
- * Copyright=Copyright (c) CMSWorks.ru
+ * Description=
+ * Version=1.0.9
+ * Date=2025-10-22
+ * Author=CMSWorks Team, Cotonti team
+ * Copyright=Copyright (c) CMSWorks.ru, Cotonti team
  * Notes=
  * Auth_guests=R
  * Lock_guests=12345A
@@ -28,6 +27,7 @@
  * maxrowsperpage=35:string::30:Число сделок на страницу
  * filepath=40:string::datas/sbr:Директория для файлов
  * extensions=45:string::jpg,jpeg,png,gif,bmp,txt,doc,docx,xls,pdf,rar,zip:Допустимые расширения файлов
+ * maxUploadSize=47:string:::
  * adminid=50:string::0:Admin id
  * [END_COT_EXT_CONFIG]
  */

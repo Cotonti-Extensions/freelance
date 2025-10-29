@@ -1,16 +1,16 @@
 <?php
-
 /**
- * sbr module
+ * Safe deal service
  *
  * @package sbr
- * @version 1.0.0
- * @author CMSWorks Team
- * @copyright Copyright (c) CMSWorks.ru
+ * @author CMSWorks Team, Cototnti team
+ * @copyright (c) CMSWorks.ru, Cototnti team
  * @license BSD
  */
 
 defined('COT_CODE') or die('Wrong URL.');
+
+$L['sbr_title'] = 'Safe deal service';
 
 $L['cfg_tax'] = array('Комиссия за оформление сделки c Заказчика (%)');
 $L['cfg_tax_performer'] = array('Комиссия с Исполнителя (%)');
@@ -22,6 +22,9 @@ $L['cfg_maxdays'] = array('Максимальный срок исполнени�
 $L['cfg_maxrowsperpage'] = array('Число сделок на странице');
 $L['cfg_filepath'] = array('Путь к директории хранения прикрепленных файлов');
 $L['cfg_extensions'] = array('Допустимые форматы файлов');
+$L['cfg_extensions'] = array('Допустимые форматы файлов');
+$L['cfg_maxUploadSize'] = 'Maximum upload file size';
+$L['cfg_maxUploadSize_hint'] = 'Megabytes. 0 or empty - no limit';
 $L['cfg_adminid'] = array('ID пользователя для зачисления комиссии');
 
 $L['sbr'] = 'Сделки';
@@ -38,10 +41,10 @@ $L['sbr_edittitle'] = 'Изменение условий сделки';
 $L['sbr_nav_info'] = 'Информация о сделке<br/><b>Бюджет и сроки</b>';
 $L['sbr_nav_stagenum'] = 'Этап №';
 
-$L['sbr_title'] = 'Название сделки';
 $L['sbr_employer'] = 'Заказчик';
 $L['sbr_performer'] = 'Исполнитель';
 $L['sbr_performer_placeholder'] = 'Введите логин исполнителя';
+$L['sbr_sbrTitle'] = 'Deal name';
 $L['sbr_stagetitle'] = 'Название';
 $L['sbr_stagetext'] = 'Техническое задание';
 $L['sbr_stagecost'] = 'Бюджет';
@@ -86,6 +89,8 @@ $L['sbr_status_process'] = 'В работе';
 $L['sbr_status_done'] = 'Завершенная сделка';
 $L['sbr_status_claim'] = 'Арбитраж';
 
+$L['sbr_error_fileToLarge'] = 'The file is too large. You can upload files no larger than {$size} MB.';
+$L['sbr_error_invalidFileType'] = 'Invalid file type';
 $L['sbr_error_rsbrperformer'] = 'Пользователь с указанным логином не найден';
 $L['sbr_error_rsbrperformernotyou'] = 'Вы не можете быть одновременно Исполнителем и Заказчиком';
 $L['sbr_error_rsbrtitle'] = 'Не указано название сделки';
@@ -96,6 +101,7 @@ $L['sbr_error_rstagecostmin'] = 'Бюджет слишком маленький'
 $L['sbr_error_rstagecostmax'] = 'Бюджет слишком большой';
 $L['sbr_error_rstagedays'] = 'Не указаны сроки';
 $L['sbr_error_rstagedaysmax'] = 'Сроки слишком большие';
+$L['sbr_error_uploadFile'] = 'File upload error: {$name}<br>{$error}';
 
 $L['sbr_action_confirm'] = 'Согласиться';
 $L['sbr_action_refuse'] = 'Отказаться';

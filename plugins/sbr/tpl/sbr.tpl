@@ -1,5 +1,4 @@
 <!-- BEGIN: MAIN -->
-
 <div class="breadcrumb">{SBR_TITLE}</div>
 <div class="pull-right paddingtop10"><span class="label label-{SBR_LABELSTATUS}">{SBR_LOCALSTATUS}</span></div>
 <h1>{SBR_SHORTTITLE}</h1>
@@ -21,7 +20,8 @@
 	<!-- ENDIF -->
 </ul>
 		
-<!-- BEGIN: SBR -->	
+<!-- BEGIN: SBR -->
+{FILE "{PHP.cfg.themes_dir}/{PHP.usr.theme}/warnings.tpl"}
 
 <!-- BEGIN: INFO -->
 <div class="block">

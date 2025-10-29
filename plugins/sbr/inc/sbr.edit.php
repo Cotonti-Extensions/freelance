@@ -1,13 +1,16 @@
 <?php
 /**
- * Edit sbr.
+ * Safe deal service
+ *
+ * Edit deal.
  *
  * @package sbr
- * @version 1.0.0
- * @author CMSWorks Team
- * @copyright Copyright (c) CMSWorks.ru
+ * @author CMSWorks Team, Cototnti team
+ * @copyright Copyright (c) CMSWorks.ru, Cototnti team
  * @license BSD
  */
+
+use cot\plugins\sbr\inc\SbrFileService;
 
 defined('COT_CODE') or die('Wrong URL');
 
@@ -28,7 +31,7 @@ $sbr = $sql->fetch();
 
 $cfg['msg_separate'] = true;
 
-list($usr['auth_read'], $usr['auth_write'], $usr['isadmin']) = cot_auth('plug', 'sbr');
+[$usr['auth_read'], $usr['auth_write'], $usr['isadmin']] = cot_auth('plug', 'sbr');
 
 /* === Hook === */
 foreach (cot_getextplugins('sbr.edit.first') as $pl) {
@@ -41,10 +44,10 @@ if (!$usr['isadmin']) {
 	cot_block($usr['auth_write'] && ($sbr['sbr_status'] == 'new' || $sbr['sbr_status'] == 'confirm' || $sbr['sbr_status'] == 'refuse'));
 }
 
-if ($a == 'update') {
+if ($a == 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 	cot_shield_protect();
 
-	list($usr['auth_read'], $usr['auth_write'], $usr['isadmin']) = cot_auth('plug', 'sbr', 'RWA');
+	[$usr['auth_read'], $usr['auth_write'], $usr['isadmin']] = cot_auth('plug', 'sbr', 'RWA');
 	cot_block($usr['auth_write']);
 	
 	/* === Hook === */
@@ -80,11 +83,12 @@ if ($a == 'update') {
 	/* ===== */
 	
 	$rsbr['sbr_title'] = $rsbrtitle;
+    $rsbr['sbr_cost'] = 0;
 
 	cot_check(empty($rsbrtitle), $L['sbr_error_rsbrtitle'], 'rsbrtitle');
 	
 	for ($i = 1; $i <= $stagescount; $i++) {
-        if (cot::$cfg['plugin']['sbr']['stages_on'] && $stagescount > 1) {
+        if (Cot::$cfg['plugin']['sbr']['stages_on'] && $stagescount > 1) {
             // Если у нас только 1 этап. Название этапа можно не указывать
             cot_check(empty($rstagetitle[$i]), $L['sbr_error_rstagetitle'], 'rstagetitle[' . $i . ']');
         }
@@ -102,7 +106,7 @@ if ($a == 'update') {
         $rstagedays[$i] = (int) $rstagedays[$i];
         cot_check(
             empty($rstagedays[$i]) && empty($rStageExpire[$i]),
-            cot::$L['sbr_error_rstagedays'],
+            Cot::$L['sbr_error_rstagedays'],
             'rstagedays[' . $i . ']'
         );
 
@@ -117,7 +121,7 @@ if ($a == 'update') {
         );
 
         cot_check(
-            ($rStageExpire[$i] > 0 && $rStageExpire[$i] < cot::$sys['now']),
+            ($rStageExpire[$i] > 0 && $rStageExpire[$i] < Cot::$sys['now']),
             'Дата окончания срока исполнения не может быть в прошлом',
             'rstageexpire[' . $i . ']'
         );
@@ -131,7 +135,7 @@ if ($a == 'update') {
 		$rsbr['sbr_cost'] += $rstagecost[$i];
 	}
 
-	$rsbr['sbr_tax'] = $rsbr['sbr_cost']*$cfg['plugin']['sbr']['tax']/100;
+	$rsbr['sbr_tax'] = $rsbr['sbr_cost'] * ((float) Cot::$cfg['plugin']['sbr']['tax']) / 100;
 	
 	/* === Hook === */
 	foreach (cot_getextplugins('sbr.edit.edit.error') as $pl) {
@@ -155,11 +159,11 @@ if ($a == 'update') {
 		
 		$stages = $db->query("SELECT * FROM $db_sbr_stages WHERE stage_sid=" . $sbr['sbr_id'] . " ORDER BY stage_num ASC")->fetchAll();
 		foreach($stages as $stage) {
-			$rstage['stage_title'] = $rstagetitle[$stage['stage_num']];
-			$rstage['stage_text'] = $rstagetext[$stage['stage_num']];
-			$rstage['stage_cost'] = $rstagecost[$stage['stage_num']];
-			$rstage['stage_days'] = $rstagedays[$stage['stage_num']];
-            $rstage['stage_expire'] = $rStageExpire[$stage['stage_num']];
+			$rstage['stage_title'] = $rstagetitle[$stage['stage_num']] ?? null;
+			$rstage['stage_text'] = $rstagetext[$stage['stage_num']] ?? null;
+			$rstage['stage_cost'] = $rstagecost[$stage['stage_num']] ?? null;
+			$rstage['stage_days'] = $rstagedays[$stage['stage_num']] ?? null;
+            $rstage['stage_expire'] = $rStageExpire[$stage['stage_num']] ?? null;
 			
 			$db->update($db_sbr_stages, $rstage, "stage_num = :stage_num AND stage_sid = :stage_sid", array(
 				":stage_num" => $stage['stage_num'],
@@ -191,13 +195,12 @@ if ($a == 'update') {
 		}
 		
 		$sbr_path = $cfg['plugin']['sbr']['filepath'] . '/' . $id . '/';
-		
-		for($i = 1; $i <= $stagescount; $i++)
-		{
-			for($j = 0; $j < 10; $j++)
-			{
-				if($rstagefiles['size'][$i][$j] > 0 && $rstagefiles['error'][$i][$j] == 0)
-				{
+
+        $fileService = SbrFileService::getInstance();
+
+		for ($i = 1; $i <= $stagescount; $i++) {
+			for ($j = 0; $j < 10; $j++) {
+				if (!empty($rstagefiles['tmp_name'][$i][$j]) && $rstagefiles['size'][$i][$j] > 0 && $rstagefiles['error'][$i][$j] == 0) {
 					$u_tmp_name_file = $rstagefiles['tmp_name'][$i][$j];
 					$u_type_file = $rstagefiles['type'][$i][$j];
 					$u_name_file = $rstagefiles['name'][$i][$j];
@@ -208,29 +211,33 @@ if ($a == 'update') {
 					$dotpos = strrpos($u_name_file,".")+1;
 					$f_extension = substr($u_name_file, $dotpos, 5);
 
-					if(!empty($u_tmp_name_file))
-					{
-						$fcheck = cot_file_check($u_tmp_name_file, $u_name_file, $f_extension);
-						if($fcheck == 1){
-							if(in_array($f_extension, explode(',', $cfg['plugin']['sbr']['extensions'])))
-							{
-								$u_newname_file = $i."_".md5(uniqid(rand(),true)).".".$f_extension;
-								$file = $sbr_path . $u_newname_file;
+					if (!empty($u_tmp_name_file)) {
+                        $result = $fileService->validateUploadedFile($u_tmp_name_file, $u_name_file);
+                        if ($result !== true) {
+                            cot_error(
+                                cot_rc(
+                                    Cot::$L['sbr_error_uploadFile'],
+                                    ['name' => $u_name_file, 'error' => $result]
+                                )
+                            );
+                            continue;
+                        }
 
-								move_uploaded_file($u_tmp_name_file, $file);
-								@chmod($file, 0766);
+                        $u_newname_file = $i."_".md5(uniqid(rand(),true)).".".$f_extension;
+                        $file = $sbr_path . $u_newname_file;
 
-								$rfile['file_sid'] = $id;
-								$rfile['file_url'] = $file;
-								$rfile['file_title'] = $u_name_file;
-								$rfile['file_area'] = 'stage';
-								$rfile['file_code'] = $i;
-								$rfile['file_ext'] = $f_extension;
-								$rfile['file_size'] = floor($u_size_file / 1024);
-								
-								$db->insert($db_sbr_files, $rfile);
-							}
-						}
+                        move_uploaded_file($u_tmp_name_file, $file);
+                        @chmod($file, 0766);
+
+                        $rfile['file_sid'] = $id;
+                        $rfile['file_url'] = $file;
+                        $rfile['file_title'] = $u_name_file;
+                        $rfile['file_area'] = 'stage';
+                        $rfile['file_code'] = $i;
+                        $rfile['file_ext'] = $f_extension;
+                        $rfile['file_size'] = floor($u_size_file / 1024);
+
+                        $db->insert($db_sbr_files, $rfile);
 					}
 				}
 			}

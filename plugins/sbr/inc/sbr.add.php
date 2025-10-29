@@ -1,13 +1,16 @@
 <?php
 /**
- * Add sbr.
+ * Safe deal service
+ *
+ * Add new deal
  *
  * @package sbr
- * @version 1.0.0
- * @author CMSWorks Team
- * @copyright Copyright (c) CMSWorks.ru
+ * @author CMSWorks Team, Cototnti team
+ * @copyright Copyright (c) CMSWorks.ru, Cototnti team
  * @license BSD
  */
+
+use cot\plugins\sbr\inc\SbrFileService;
 
 defined('COT_CODE') or die('Wrong URL');
 
@@ -22,7 +25,7 @@ if (empty($stagescount)) {
 
 $cfg['msg_separate'] = true;
 
-list($usr['auth_read'], $usr['auth_write'], $usr['isadmin']) = cot_auth('plug', 'sbr');
+[$usr['auth_read'], $usr['auth_write'], $usr['isadmin']] = cot_auth('plug', 'sbr');
 
 $rsbrperformer = '';
 $rsbr = [
@@ -41,7 +44,7 @@ if ($a == 'add')
 {
 	cot_shield_protect();
 
-	list($usr['auth_read'], $usr['auth_write'], $usr['isadmin']) = cot_auth('plug', 'sbr', 'RWA');
+	[$usr['auth_read'], $usr['auth_write'], $usr['isadmin']] = cot_auth('plug', 'sbr', 'RWA');
 	cot_block($usr['auth_write']);
 	
 	/* === Hook === */
@@ -78,24 +81,24 @@ if ($a == 'add')
 		$rsbr['sbr_performer'] = $uid;
 	}
 	
-	cot_check(empty($rsbrtitle), cot::$L['sbr_error_rsbrtitle'], 'rsbrtitle');
+	cot_check(empty($rsbrtitle), Cot::$L['sbr_error_rsbrtitle'], 'rsbrtitle');
 
     $rsbr['sbr_cost'] = 0;
 
 	for ($i = 1; $i <= $stagescount; $i++) {
-        if (cot::$cfg['plugin']['sbr']['stages_on'] && $stagescount > 1) {
+        if (Cot::$cfg['plugin']['sbr']['stages_on'] && $stagescount > 1) {
             // Если у нас только 1 этап. Название этапа можно не указывать
-            cot_check(empty($rstagetitle[$i]), cot::$L['sbr_error_rstagetitle'], 'rstagetitle[' . $i . ']');
+            cot_check(empty($rstagetitle[$i]), Cot::$L['sbr_error_rstagetitle'], 'rstagetitle[' . $i . ']');
         }
-		cot_check(empty($rstagetext[$i]), cot::$L['sbr_error_rstagetext'], 'rstagetext['.$i.']');
-		cot_check(empty($rstagecost[$i]), cot::$L['sbr_error_rstagecost'], 'rstagecost['.$i.']');
+		cot_check(empty($rstagetext[$i]), Cot::$L['sbr_error_rstagetext'], 'rstagetext['.$i.']');
+		cot_check(empty($rstagecost[$i]), Cot::$L['sbr_error_rstagecost'], 'rstagecost['.$i.']');
 		cot_check(
             (
                 !empty($rstagecost[$i])
                 && $rstagecost[$i] < $cfg['plugin']['sbr']['mincost']
                 && $cfg['plugin']['sbr']['mincost'] > 0
             ),
-            cot::$L['sbr_error_rstagecostmin'],
+            Cot::$L['sbr_error_rstagecostmin'],
             'rstagecost['.$i.']'
         );
 		cot_check(
@@ -104,7 +107,7 @@ if ($a == 'add')
                 && $rstagecost[$i] > $cfg['plugin']['sbr']['maxcost']
                 && $cfg['plugin']['sbr']['maxcost'] > 0
             ),
-            cot::$L['sbr_error_rstagecostmax'],
+            Cot::$L['sbr_error_rstagecostmax'],
             'rstagecost['.$i.']'
         );
 
@@ -117,7 +120,7 @@ if ($a == 'add')
         $rstagedays[$i] = (int) $rstagedays[$i];
 		cot_check(
             empty($rstagedays[$i]) && empty($rStageExpire[$i]),
-            cot::$L['sbr_error_rstagedays'],
+            Cot::$L['sbr_error_rstagedays'],
             'rstagedays[' . $i . ']'
         );
 		cot_check(
@@ -126,12 +129,12 @@ if ($a == 'add')
                 && $rstagedays[$i] > $cfg['plugin']['sbr']['maxdays']
                 && $cfg['plugin']['sbr']['maxdays'] > 0
             ),
-            cot::$L['sbr_error_rstagedaysmax'],
+            Cot::$L['sbr_error_rstagedaysmax'],
             'rstagedays['.$i.']'
         );
 
         cot_check(
-            ($rStageExpire[$i] > 0 && $rStageExpire[$i] < cot::$sys['now']),
+            ($rStageExpire[$i] > 0 && $rStageExpire[$i] < Cot::$sys['now']),
             'Дата окончания срока исполнения не может быть в прошлом',
             'rstageexpire[' . $i . ']'
         );
@@ -145,7 +148,7 @@ if ($a == 'add')
 		$rsbr['sbr_cost'] += (isset($rstagecost[$i]) ? (float) $rstagecost[$i] : 0);
 	}
 
-	$rsbr['sbr_tax'] = $rsbr['sbr_cost'] * cot::$cfg['plugin']['sbr']['tax'] / 100;
+	$rsbr['sbr_tax'] = $rsbr['sbr_cost'] * ((float) Cot::$cfg['plugin']['sbr']['tax']) / 100;
 	
 	$rsbr['sbr_title'] = $rsbrtitle;
 	$rsbr['sbr_pid'] = $pid;
@@ -159,11 +162,13 @@ if ($a == 'add')
 	
 	if (!cot_error_found()) {
 		$rsbr['sbr_status'] = 'new';
-		$rsbr['sbr_create'] = cot::$sys['now'];
+		$rsbr['sbr_create'] = Cot::$sys['now'];
 
-		cot::$db->insert(cot::$db->sbr, $rsbr);
-		$id = cot::$db->lastInsertId();
-		
+		Cot::$db->insert(Cot::$db->sbr, $rsbr);
+		$id = Cot::$db->lastInsertId();
+
+        $fileService = SbrFileService::getInstance();
+
 		for ($i = 1; $i <= $stagescount; $i++) {
             $rstage = [
                 'stage_sid' => $id,
@@ -175,16 +180,16 @@ if ($a == 'add')
                 'stage_expire' => $rStageExpire[$i],
             ];
 
-            cot::$db->insert(cot::$db->sbr_stages, $rstage);
-			$stageid = cot::$db->lastInsertId();
+            Cot::$db->insert(Cot::$db->sbr_stages, $rstage);
+			$stageid = Cot::$db->lastInsertId();
 			
 			$sbr_path = $cfg['plugin']['sbr']['filepath'] . '/' . $id . '/';
 			if (!file_exists($sbr_path)) {
-                mkdir($sbr_path, cot::$cfg['dir_perms'], true);
+                mkdir($sbr_path, Cot::$cfg['dir_perms'], true);
 			}
 
 			for ($j = 0; $j < 10; $j++) {
-				if ($rstagefiles['size'][$i][$j] > 0 && $rstagefiles['error'][$i][$j] == 0) {
+				if (!empty($rstagefiles['tmp_name'][$i][$j]) && $rstagefiles['size'][$i][$j] > 0 && $rstagefiles['error'][$i][$j] == 0) {
 					$u_tmp_name_file = $rstagefiles['tmp_name'][$i][$j];
 					$u_type_file = $rstagefiles['type'][$i][$j];
 					$u_name_file = $rstagefiles['name'][$i][$j];
@@ -195,29 +200,33 @@ if ($a == 'add')
 					$dotpos = strrpos($u_name_file,".")+1;
 					$f_extension = substr($u_name_file, $dotpos, 5);
 
-					if(!empty($u_tmp_name_file))
-					{
-						$fcheck = cot_file_check($u_tmp_name_file, $u_name_file, $f_extension);
-						if($fcheck == 1){
-							if(in_array($f_extension, explode(',', $cfg['plugin']['sbr']['extensions'])))
-							{
-								$u_newname_file = $i."_".md5(uniqid(rand(),true)).".".$f_extension;
-								$file = $sbr_path . $u_newname_file;
+					if (!empty($u_tmp_name_file)) {
+                        $result = $fileService->validateUploadedFile($u_tmp_name_file, $u_name_file);
+                        if ($result !== true) {
+                            cot_error(
+                                cot_rc(
+                                    Cot::$L['sbr_error_uploadFile'],
+                                    ['name' => $u_name_file, 'error' => $result]
+                                )
+                            );
+                            continue;
+                        }
 
-								move_uploaded_file($u_tmp_name_file, $file);
-								@chmod($file, 0766);
+                        $u_newname_file = $i . '_' . md5(uniqid(rand(),true)) . '.' . $f_extension;
+                        $file = $sbr_path . $u_newname_file;
 
-								$rfile['file_sid'] = $id;
-								$rfile['file_url'] = $file;
-								$rfile['file_title'] = $u_name_file;
-								$rfile['file_area'] = 'stage';
-								$rfile['file_code'] = $i;
-								$rfile['file_ext'] = $f_extension;
-								$rfile['file_size'] = floor($u_size_file / 1024);
-								
-								$db->insert($db_sbr_files, $rfile);
-							}
-						}
+                        move_uploaded_file($u_tmp_name_file, $file);
+                        @chmod($file, 0766);
+
+                        $rfile['file_sid'] = $id;
+                        $rfile['file_url'] = $file;
+                        $rfile['file_title'] = $u_name_file;
+                        $rfile['file_area'] = 'stage';
+                        $rfile['file_code'] = $i;
+                        $rfile['file_ext'] = $f_extension;
+                        $rfile['file_size'] = floor($u_size_file / 1024);
+
+                        $db->insert($db_sbr_files, $rfile);
 					}
 				}
 			}
@@ -242,8 +251,8 @@ if ($a == 'add')
 	}
 }
 
-$out['subtitle'] = cot::$L['sbr_addtitle'];
-$out['head'] .= cot::$R['code_noindex'];
+$out['subtitle'] = Cot::$L['sbr_addtitle'];
+$out['head'] .= Cot::$R['code_noindex'];
 
 $mskin = cot_tplfile(array('sbr', 'add'), 'plug');
 
