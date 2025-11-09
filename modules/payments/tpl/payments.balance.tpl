@@ -1,7 +1,7 @@
 <!-- BEGIN: MAIN -->
 {FILE "{PHP.cfg.themes_dir}/{PHP.usr.theme}/warnings.tpl"}
 <div class="breadcrumb">{PHP.L.payments_mybalance}</div>
-		
+
 <!-- IF {PHP.cfg.payments.balance_enabled} -->
 <h4>{PHP.L.payments_balance}: {BALANCE_SUMM|number_format($this, '2', '.', ' ')} {PHP.cfg.payments.valuta}</h4>
 <!-- ENDIF -->
@@ -24,7 +24,6 @@
 
 	<!-- BEGIN: BILLINGFORM -->
 	<h5>{PHP.L.payments_balance_billing_desc}</h5>
-	{FILE "{PHP.cfg.themes_dir}/{PHP.cfg.defaulttheme}/warnings.tpl"}
 	<form action="{BALANCE_FORM_ACTION_URL}" method="post" class="form-horizontal">
 		<div class="form-group">
 			<label class="col-md-2 control-label">{PHP.L.payments_balance_billing_summ}:</label>

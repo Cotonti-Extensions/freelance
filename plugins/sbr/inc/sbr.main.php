@@ -9,6 +9,8 @@
  * @license BSD
  */
 
+use cot\modules\payments\dictionaries\PaymentDictionary;
+
 defined('COT_CODE') or die('Wrong URL');
 
 $id = cot_import('id', 'G', 'INT');
@@ -16,7 +18,7 @@ $num = cot_import('num', 'G', 'INT');
 $stageid = cot_import('stageid', 'G', 'INT'); // Нигде не используется
 $action = cot_import('action', 'G', 'ALP');
 
-list($usr['auth_read'], $usr['auth_write'], $usr['isadmin']) = cot_auth('plug', 'sbr');
+[$usr['auth_read'], $usr['auth_write'], $usr['isadmin']] = cot_auth('plug', 'sbr');
 cot_block($usr['auth_read']);
 
 /* === Hook === */
@@ -98,37 +100,50 @@ if ($usr['id'] == $sbr['sbr_employer']) {
 	}
 	
 	// Принятие этапа (Завершение этапа и оплата Исполнителю суммы за этап)
-	if(!empty($num) && $a == 'done' && $sbr['sbr_status'] == 'process') {
+	if (!empty($num) && $a == 'done' && $sbr['sbr_status'] == 'process') {
 		cot_shield_protect();
 
-		if ($stage = $db->query("SELECT * FROM $db_sbr_stages WHERE stage_sid=" . $id . " AND stage_status='process' AND stage_num=" . $num)->fetch())
-		{
+		if (
+            $stage = $db->query(
+                "SELECT * FROM $db_sbr_stages WHERE stage_sid=" . $id . " AND stage_status='process' AND stage_num=" . $num
+            )->fetch()) {
 			$rtext = cot_import('rtext', 'P', 'TXT');
 			
 			/* === Hook === */
-			foreach (cot_getextplugins('sbr.stage.done.first') as $pl)
-			{
+			foreach (cot_getextplugins('sbr.stage.done.first') as $pl) {
 				include $pl;
 			}
 			/* ===== */
 			
-			$rstage['stage_done'] = $sys['now'];
+			$rstage['stage_done'] = Cot::$sys['now'];
 			$rstage['stage_status'] = 'done';
-			
-			if($db->update($db_sbr_stages, $rstage, "stage_sid=" . $id . " AND stage_num=" . $num))
-			{				
-				$payperformerwithtax = $stage['stage_cost'] - $stage['stage_cost']*$cfg['plugin']['sbr']['tax_performer']/100;
-				
+
+            $feePerformer = !empty($cfg['plugin']['sbr']['tax_performer']) ? $cfg['plugin']['sbr']['tax_performer'] : '0';
+            $feePerformerAmount = bcmul($stage['stage_cost'], $feePerformer, 5);
+            $feePerformerAmount = bcdiv($feePerformerAmount, '100', 5);
+            $payPerformerAmount = '0';
+
+            $feeEmployer = !empty($cfg['plugin']['sbr']['tax']) ? $cfg['plugin']['sbr']['tax'] : '0';
+            $feeEmployerAmount = bcmul($stage['stage_cost'], $feeEmployer, 5);
+            $feeEmployerAmount = bcdiv($feeEmployerAmount, '100', 5);
+
+            $feeTotal = bcadd($feePerformer, $feeEmployer, 5);
+            $feeTotalAmount = bcmul($stage['stage_cost'], $feeTotal, 5);
+            $feeTotalAmount = bcdiv($feeTotalAmount, '100', 5);
+
+			if ($db->update($db_sbr_stages, $rstage, "stage_sid=" . $id . " AND stage_num=" . $num)) {
+                $payPerformerAmount = bcsub($stage['stage_cost'], $feePerformerAmount, 5);
+
 				// Выплата Исполнителю
 				$payinfo['pay_userid'] = $sbr['sbr_performer'];
-				$payinfo['pay_area'] = 'balance';
-				$payinfo['pay_code'] = 'sbr:'.$id.';stage:'.$stage['stage_num'];
-				$payinfo['pay_summ'] = $payperformerwithtax;
-				$payinfo['pay_cdate'] = $sys['now'];
-				$payinfo['pay_pdate'] = $sys['now'];
-				$payinfo['pay_adate'] = $sys['now'];
+				$payinfo['pay_area'] = PaymentDictionary::PAYMENT_SOURCE_BALANCE;
+				$payinfo['pay_code'] = 'sbr:' . $id . ';stage:' . $stage['stage_num'];
+				$payinfo['pay_summ'] = $payPerformerAmount; // @todo Округлить до двух знаков после запятой?
+				$payinfo['pay_cdate'] = Cot::$sys['now'];
+				$payinfo['pay_pdate'] = Cot::$sys['now'];
+				$payinfo['pay_adate'] = Cot::$sys['now'];
 				$payinfo['pay_status'] = 'done';
-				$payinfo['pay_desc'] = cot_rc($L['sbr_stage_done_payments_desc'], 
+				$payinfo['pay_desc'] = cot_rc(Cot::$L['sbr_stage_done_payments_desc'],
 					array(
 						'sbr_title' => $sbr['sbr_title'], 
 						'stage_title' => $stage['stage_title'], 
@@ -136,21 +151,17 @@ if ($usr['id'] == $sbr['sbr_employer']) {
 					)
 				);
 
-				if($db->insert($db_payments, $payinfo))
-				{
-					$tax = $cfg['plugin']['sbr']['tax'] + $cfg['plugin']['sbr']['tax_performer'];
-
-					if($cfg['plugin']['sbr']['adminid'] > 0 && $tax > 0)
-					{
-						$payinfo['pay_userid'] = $cfg['plugin']['sbr']['adminid'];
-						$payinfo['pay_area'] = 'balance';
-						$payinfo['pay_code'] = 'sbr:'.$id.';stage:'.$stage['stage_num'];
-						$payinfo['pay_summ'] = $stage['stage_cost']*$tax/100;
-						$payinfo['pay_cdate'] = $sys['now'];
-						$payinfo['pay_pdate'] = $sys['now'];
-						$payinfo['pay_adate'] = $sys['now'];
+				if (Cot::$db->insert($db_payments, $payinfo)) {
+					if (Cot::$cfg['plugin']['sbr']['adminid'] > 0 && ((float) $feeTotal) > 0) {
+						$payinfo['pay_userid'] = Cot::$cfg['plugin']['sbr']['adminid'];
+						$payinfo['pay_area'] = PaymentDictionary::PAYMENT_SOURCE_BALANCE;
+						$payinfo['pay_code'] = 'sbr:' . $id . ';stage:' . $stage['stage_num'];
+						$payinfo['pay_summ'] = $feeTotalAmount;
+						$payinfo['pay_cdate'] = Cot::$sys['now'];
+						$payinfo['pay_pdate'] = Cot::$sys['now'];
+						$payinfo['pay_adate'] = Cot::$sys['now'];
 						$payinfo['pay_status'] = 'done';
-						$payinfo['pay_desc'] = cot_rc($L['sbr_stage_tax_payments_desc'], 
+						$payinfo['pay_desc'] = cot_rc(Cot::$L['sbr_stage_tax_payments_desc'],
 							array(
 								'sbr_title' => $sbr['sbr_title'], 
 								'stage_title' => $stage['stage_title'], 
@@ -161,8 +172,7 @@ if ($usr['id'] == $sbr['sbr_employer']) {
 						$db->insert($db_payments, $payinfo);
 					}
 
-					if(!empty($rtext))
-					{
+					if (!empty($rtext)) {
 						cot_sbr_sendpost($id, $rtext, $sbr['sbr_performer'], $usr['id']);
 					}
 					
@@ -208,9 +218,8 @@ if ($usr['id'] == $sbr['sbr_employer']) {
 					}
 					
 					//  Если нет этапов на исполнении, то завершить сделку полностью
-					$notstartedstages = (bool)$db->query("SELECT COUNT(*) FROM $db_sbr_stages WHERE stage_sid=" . $id . " AND stage_status='process'")->fetchColumn();
-					if(!$notstartedstages)
-					{
+					$notstartedstages = (bool) $db->query("SELECT COUNT(*) FROM $db_sbr_stages WHERE stage_sid=" . $id . " AND stage_status='process'")->fetchColumn();
+					if (!$notstartedstages) {
 						$rsbr['sbr_done'] = $sys['now'];
 						$rsbr['sbr_status'] = 'done';
 						$db->update($db_sbr, $rsbr, "sbr_id=" . $id);
@@ -220,8 +229,7 @@ if ($usr['id'] == $sbr['sbr_employer']) {
 					}
 
 					/* === Hook === */
-					foreach (cot_getextplugins('sbr.stage.done.done') as $pl)
-					{
+					foreach (cot_getextplugins('sbr.stage.done.done') as $pl) {
 						include $pl;
 					}
 					/* ===== */
@@ -231,7 +239,7 @@ if ($usr['id'] == $sbr['sbr_employer']) {
 
         $urlParams = ['id' => $id,];
         $stagesCount = cot::$db->query(
-            'SELECT COUNT(*) FROM ' . cot::$db->sbr_stages . ' WHERE stage_sid = :id',
+            'SELECT COUNT(*) FROM ' . Cot::$db->sbr_stages . ' WHERE stage_sid = :id',
             ['id' => $id,]
         )->fetchColumn();
         if (cot::$cfg['plugin']['sbr']['stages_on'] && $stagesCount > 1) {
@@ -246,11 +254,9 @@ if ($usr['id'] == $sbr['sbr_employer']) {
 	$role = 'performer';
 	
 	// Если сделка на согласовании, то можно подтвердить участие
-	if($a == 'confirm' && $sbr['sbr_status'] == 'new')
-	{
+	if ($a == 'confirm' && $sbr['sbr_status'] == 'new') {
 		/* === Hook === */
-		foreach (cot_getextplugins('sbr.confirm.first') as $pl)
-		{
+		foreach (cot_getextplugins('sbr.confirm.first') as $pl) {
 			include $pl;
 		}
 		/* ===== */
@@ -395,179 +401,214 @@ if (!empty($num) && $a == 'decision' && $sbr['sbr_status'] == 'claim' && $usr['i
         'SELECT COUNT(*) FROM ' . cot::$db->sbr_stages . ' WHERE stage_sid = :id',
         ['id' => $id,]
     )->fetchColumn();
+
     if (cot::$cfg['plugin']['sbr']['stages_on'] && $stagesCount > 1) {
         $urlParams['num'] = $num;
     }
 
-	if($stage = $db->query("SELECT * FROM $db_sbr_stages WHERE stage_sid=" . $id . " AND stage_status='claim' AND stage_num=" . $num)->fetch())
-	{
-
+	if (
+        $stage = $db->query(
+            "SELECT * FROM $db_sbr_stages WHERE stage_sid=" . $id . " AND stage_status='claim' AND stage_num=" . $num
+        )->fetch()
+    ) {
 		$rtext = cot_import('rdecisiontext', 'P', 'TXT');
-		$payperformer = cot_import('payperformer', 'P', 'NUM');
-		$payemployer = cot_import('payemployer', 'P', 'NUM');
+		$payPerformer = cot_import('payperformer', 'P', 'NUM');
+		$payEmployer = cot_import('payemployer', 'P', 'NUM');
 
 		/* === Hook === */
-		foreach (cot_getextplugins('sbr.stage.decision.import') as $pl)
-		{
+		foreach (cot_getextplugins('sbr.stage.decision.import') as $pl) {
 			include $pl;
 		}
 		/* ===== */
 		
 		cot_check(empty($rtext), 'sbr_claim_decision_error_text', 'rdecisiontext');
-		cot_check(($payperformer + $payemployer != $stage['stage_cost']), 'sbr_claim_decision_error_pay', 'payemployer');
+		cot_check(($payPerformer + $payEmployer != $stage['stage_cost']), 'sbr_claim_decision_error_pay', 'payemployer');
 
-		if(!cot_error_found())
-		{
+		if (!cot_error_found()) {
 			$rclaim['claim_done'] = $sys['now'];
 			$rclaim['claim_status'] = 'new';
-			
-			if($db->update($db_sbr_claims, $rclaim, "claim_sid=".$id." AND claim_stage=".$num))
-			{
-				$rstage['stage_done'] = $sys['now'];
-				$rstage['stage_status'] = 'done';
 
-				if($db->update($db_sbr_stages, $rstage, "stage_sid=" . $id . " AND stage_num=" . $num))
-				{						
-					$payperformerwithtax = $payperformer - $payperformer*$cfg['plugin']['sbr']['tax_performer']/100;
-					
-					// Выплата Исполнителю
-					if($payperformer > 0)
-					{
-						$payinfo['pay_userid'] = $sbr['sbr_performer'];
-						$payinfo['pay_area'] = 'balance';
-						$payinfo['pay_code'] = 'sbr:'.$id.';stage:'.$num;
-						$payinfo['pay_summ'] = $payperformerwithtax;
-						$payinfo['pay_cdate'] = $sys['now'];
-						$payinfo['pay_pdate'] = $sys['now'];
-						$payinfo['pay_adate'] = $sys['now'];
-						$payinfo['pay_status'] = 'done';
-						$payinfo['pay_desc'] = cot_rc($L['sbr_claim_payments_performer_desc'], 
-							array(
-								'sbr_title' => $sbr['sbr_title'], 
-								'stage_title' => $stage['stage_title'], 
-								'stage_num' => $stage['stage_num']
-							)
-						);
+            Cot::$db->beginTransaction();
+            try {
+                if ($db->update($db_sbr_claims, $rclaim, "claim_sid=" . $id . " AND claim_stage=" . $num)) {
+                    $rstage['stage_done'] = $sys['now'];
+                    $rstage['stage_status'] = 'done';
 
-						if($db->insert($db_payments, $payinfo)) 
-						{
-							$tax = $cfg['plugin']['sbr']['tax'] + $cfg['plugin']['sbr']['tax_performer'];
+                    $feePerformer = !empty($cfg['plugin']['sbr']['tax_performer']) ? $cfg['plugin']['sbr']['tax_performer'] : '0';
+                    $feePerformerAmount = bcmul($payPerformer, $feePerformer, 5);
+                    $feePerformerAmount = bcdiv($feePerformerAmount, '100', 5);
+                    $payPerformerAmount = '0';
 
-							if($cfg['plugin']['sbr']['adminid'] > 0 && $tax > 0)
-							{
-								$payinfo['pay_userid'] = $cfg['plugin']['sbr']['adminid'];
-								$payinfo['pay_area'] = 'balance';
-								$payinfo['pay_code'] = 'sbr:'.$id.';stage:'.$num;
-								$payinfo['pay_summ'] = $payperformer*$tax/100;
-								$payinfo['pay_cdate'] = $sys['now'];
-								$payinfo['pay_pdate'] = $sys['now'];
-								$payinfo['pay_adate'] = $sys['now'];
-								$payinfo['pay_status'] = 'done';
-								$payinfo['pay_desc'] = cot_rc($L['sbr_claim_payments_admin_desc'], 
-									array(
-										'sbr_title' => $sbr['sbr_title'], 
-										'stage_title' => $stage['stage_title'], 
-										'stage_num' => $stage['stage_num']
-									)
-								);
+                    $feeEmployer = !empty($cfg['plugin']['sbr']['tax']) ? $cfg['plugin']['sbr']['tax'] : '0';
 
-								$db->insert($db_payments, $payinfo);
-							}
-						}
-					}
+                    // Комиссия считается только на сумму, выплаченную исполнителю
+                    $feeTotal = bcadd($feePerformer, $feeEmployer, 5);
+                    $feeTotalAmount = bcmul($payPerformer, $feeTotal, 5);
+                    $feeTotalAmount = bcdiv($feeTotalAmount, '100', 5);
 
-					// Выплата Заказчику
-					if($payemployer > 0)
-					{
-						$payinfo['pay_userid'] = $sbr['sbr_employer'];
-						$payinfo['pay_area'] = 'balance';
-						$payinfo['pay_code'] = 'sbr:'.$id.';stage:'.$num;
-						$payinfo['pay_summ'] = $payemployer;
-						$payinfo['pay_cdate'] = $sys['now'];
-						$payinfo['pay_pdate'] = $sys['now'];
-						$payinfo['pay_adate'] = $sys['now'];
-						$payinfo['pay_status'] = 'done';
-						$payinfo['pay_desc'] = cot_rc($L['sbr_claim_payments_employer_desc'], 
-							array(
-								'sbr_title' => $sbr['sbr_title'], 
-								'stage_title' => $stage['stage_title'], 
-								'stage_num' => $stage['stage_num']
-							)
-						);
+                    if ($db->update($db_sbr_stages, $rstage, "stage_sid=" . $id . " AND stage_num=" . $num)) {
+                        $payPerformerAmount = bcsub($payPerformer, $feePerformerAmount, 5);
 
-						$db->insert($db_payments, $payinfo);
-					}
-					
-					cot_sbr_sendpost(
-						$id, 
-						cot_rc(
-							$L['sbr_posts_performer_stage_claim_decision_payment'], array(
-								'sbr_title' => $sbr['sbr_title'], 
-								'stage_title' => $stage['stage_title'], 
-								'stage_num' => $stage['stage_num'],
-								'payperformer' => (!empty($payperformer)) ? $payperformer : 0,
-								'payemployer' => (!empty($payemployer)) ? $payemployer : 0,
-								'decision' => $rtext,
-								'valuta' => $cfg['payments']['valuta'],
-							)
-						), 
-						$sbr['sbr_performer'], 
-						0, 
-						'warning',
-						true
-					);
-					cot_sbr_sendpost(
-						$id, 
-						cot_rc(
-							$L['sbr_posts_employer_stage_claim_decision_payment'], array(
-								'sbr_title' => $sbr['sbr_title'], 
-								'stage_title' => $stage['stage_title'], 
-								'stage_num' => $stage['stage_num'],
-								'payperformer' => (!empty($payperformer)) ? $payperformer : 0,
-								'payemployer' => (!empty($payemployer)) ? $payemployer : 0,
-								'decision' => $rtext,
-								'valuta' => $cfg['payments']['valuta'],
-							)
-						), 
-						$sbr['sbr_employer'], 
-						0, 
-						'warning',
-						true
-					);
-			
-					// Запуск следующего этапа на исполнение, если он существует
-					$nextstagenum = $num + 1;		
-					if($nstageid = $db->query("SELECT stage_id FROM $db_sbr_stages WHERE stage_sid=" . $id . " AND stage_num=" . $nextstagenum)->fetchColumn())
-					{
-						$nstage['stage_begin'] = $sys['now'];
-						$nstage['stage_status'] = 'process';
-						$db->update($db_sbr_stages, $nstage, "stage_id=" . $nstageid);
-					}
-					
-					//  Если нет этапов на исполнении, то завершить сделку полностью
-					$notstartedstages = (bool)$db->query("SELECT COUNT(*) FROM $db_sbr_stages WHERE stage_sid=" . $id . " AND stage_status='process'")->fetchColumn();
-					if(!$notstartedstages)
-					{
-						$rsbr['sbr_done'] = $sys['now'];
-						$rsbr['sbr_status'] = 'done';
-						$db->update($db_sbr, $rsbr, "sbr_id=" . $id);
-						
-						cot_sbr_sendpost($id, $L['sbr_posts_performer_done'], $sbr['sbr_performer'], 0, 'success', true);
-						cot_sbr_sendpost($id, $L['sbr_posts_employer_done'], $sbr['sbr_employer'], 0, 'success', true);
-					}
-					else
-					{
-						$db->update($db_sbr, array('sbr_claim' => $sys['now'], 'sbr_status' => 'process'), "sbr_id=" . $id);
-					}
+                        // Выплата Исполнителю
+                        if ($payPerformer > 0) {
+                            $payinfo['pay_userid'] = $sbr['sbr_performer'];
+                            $payinfo['pay_area'] = PaymentDictionary::PAYMENT_SOURCE_BALANCE;
+                            $payinfo['pay_code'] = 'sbr:' . $id . ';stage:' . $num;
+                            $payinfo['pay_summ'] = $payPerformerAmount;
+                            $payinfo['pay_cdate'] = $sys['now'];
+                            $payinfo['pay_pdate'] = $sys['now'];
+                            $payinfo['pay_adate'] = $sys['now'];
+                            $payinfo['pay_status'] = PaymentDictionary::STATUS_DONE;
+                            $payinfo['pay_desc'] = cot_rc(
+                                Cot::$L['sbr_claim_payments_performer_desc'],
+                                [
+                                    'sbr_title' => $sbr['sbr_title'],
+                                    'stage_title' => $stage['stage_title'],
+                                    'stage_num' => $stage['stage_num']
+                                ]
+                            );
 
-					/* === Hook === */
-					foreach (cot_getextplugins('sbr.stage.done.done') as $pl)
-					{
-						include $pl;
-					}
-					/* ===== */
-				}
-			}
+                            if (Cot::$db->insert($db_payments, $payinfo)) {
+                                if (Cot::$cfg['plugin']['sbr']['adminid'] > 0 && ((float) $feeTotal) > 0) {
+                                    $payinfo['pay_userid'] = Cot::$cfg['plugin']['sbr']['adminid'];
+                                    $payinfo['pay_area'] = PaymentDictionary::PAYMENT_SOURCE_BALANCE;
+                                    $payinfo['pay_code'] = 'sbr:' . $id . ';stage:' . $num;
+                                    $payinfo['pay_summ'] = $feeTotalAmount;
+                                    $payinfo['pay_cdate'] = Cot::$sys['now'];
+                                    $payinfo['pay_pdate'] = Cot::$sys['now'];
+                                    $payinfo['pay_adate'] = Cot::$sys['now'];
+                                    $payinfo['pay_status'] = PaymentDictionary::STATUS_DONE;
+                                    $payinfo['pay_desc'] = cot_rc(
+                                        Cot::$L['sbr_claim_payments_admin_desc'],
+                                        [
+                                            'sbr_title' => $sbr['sbr_title'],
+                                            'stage_title' => $stage['stage_title'],
+                                            'stage_num' => $stage['stage_num']
+                                        ]
+                                    );
+
+                                    $db->insert($db_payments, $payinfo);
+                                }
+                            }
+                        }
+
+                        // Выплата Заказчику
+                        if ($payEmployer > 0) {
+                            $payinfo['pay_userid'] = $sbr['sbr_employer'];
+                            $payinfo['pay_area'] = PaymentDictionary::PAYMENT_SOURCE_BALANCE;
+                            $payinfo['pay_code'] = 'sbr:' . $id . ';stage:' . $num;
+                            $payinfo['pay_summ'] = $payEmployer; // @todo удержать комиссию?
+                            $payinfo['pay_cdate'] = Cot::$sys['now'];
+                            $payinfo['pay_pdate'] = Cot::$sys['now'];
+                            $payinfo['pay_adate'] = Cot::$sys['now'];
+                            $payinfo['pay_status'] = PaymentDictionary::STATUS_DONE;
+                            $payinfo['pay_desc'] = cot_rc(
+                                Cot::$L['sbr_claim_payments_employer_desc'],
+                                [
+                                    'sbr_title' => $sbr['sbr_title'],
+                                    'stage_title' => $stage['stage_title'],
+                                    'stage_num' => $stage['stage_num'],
+                                ]
+                            );
+
+                            Cot::$db->insert($db_payments, $payinfo);
+                        }
+
+                        cot_sbr_sendpost(
+                            $id,
+                            cot_rc(
+                                $L['sbr_posts_performer_stage_claim_decision_payment'],
+                                [
+                                    'sbr_title' => $sbr['sbr_title'],
+                                    'stage_title' => $stage['stage_title'],
+                                    'stage_num' => $stage['stage_num'],
+                                    'payperformer' => (!empty($payPerformer)) ? $payPerformer : 0,
+                                    'payemployer' => (!empty($payEmployer)) ? $payEmployer : 0,
+                                    'decision' => $rtext,
+                                    'valuta' => $cfg['payments']['valuta'],
+                                ]
+                            ),
+                            $sbr['sbr_performer'],
+                            0,
+                            'warning',
+                            true
+                        );
+                        cot_sbr_sendpost(
+                            $id,
+                            cot_rc(
+                                $L['sbr_posts_employer_stage_claim_decision_payment'],
+                                [
+                                    'sbr_title' => $sbr['sbr_title'],
+                                    'stage_title' => $stage['stage_title'],
+                                    'stage_num' => $stage['stage_num'],
+                                    'payperformer' => (!empty($payPerformer)) ? $payPerformer : 0,
+                                    'payemployer' => (!empty($payEmployer)) ? $payEmployer : 0,
+                                    'decision' => $rtext,
+                                    'valuta' => $cfg['payments']['valuta'],
+                                ]
+                            ),
+                            $sbr['sbr_employer'],
+                            0,
+                            'warning',
+                            true
+                        );
+
+                        // Запуск следующего этапа на исполнение, если он существует
+                        $nextstagenum = $num + 1;
+                        if ($nstageid = $db->query(
+                            "SELECT stage_id FROM $db_sbr_stages WHERE stage_sid=" . $id . " AND stage_num=" . $nextstagenum
+                        )->fetchColumn()) {
+                            $nstage['stage_begin'] = $sys['now'];
+                            $nstage['stage_status'] = 'process';
+                            $db->update($db_sbr_stages, $nstage, "stage_id=" . $nstageid);
+                        }
+
+                        //  Если нет этапов на исполнении, то завершить сделку полностью
+                        $notstartedstages = (bool)$db->query(
+                            "SELECT COUNT(*) FROM $db_sbr_stages WHERE stage_sid=" . $id . " AND stage_status='process'"
+                        )->fetchColumn();
+                        if (!$notstartedstages) {
+                            $rsbr['sbr_done'] = $sys['now'];
+                            $rsbr['sbr_status'] = 'done';
+                            $db->update($db_sbr, $rsbr, "sbr_id=" . $id);
+
+                            cot_sbr_sendpost(
+                                $id,
+                                $L['sbr_posts_performer_done'],
+                                $sbr['sbr_performer'],
+                                0,
+                                'success',
+                                true
+                            );
+                            cot_sbr_sendpost(
+                                $id,
+                                $L['sbr_posts_employer_done'],
+                                $sbr['sbr_employer'],
+                                0,
+                                'success',
+                                true
+                            );
+                        } else {
+                            $db->update(
+                                $db_sbr,
+                                ['sbr_claim' => $sys['now'], 'sbr_status' => 'process'],
+                                "sbr_id=" . $id
+                            );
+                        }
+
+                        /* === Hook === */
+                        foreach (cot_getextplugins('sbr.stage.done.done') as $pl) {
+                            include $pl;
+                        }
+                        /* ===== */
+                    }
+                }
+                Cot::$db->commit();
+            } catch (Throwable $e) {
+                Cot::$db->rollback();
+                throw $e;
+            }
+
 			cot_redirect(cot_url('sbr', $urlParams, '', true));
 		}
 	}
@@ -801,9 +842,9 @@ if ($action == 'decision') {
     $urlParams['a'] = 'decision';
 	$t->assign(array(
 		'DECISION_FORM_ACTION' => cot_url('sbr', $urlParams),
-		'DECISION_FORM_TEXT' => cot_textarea('rdecisiontext', $rtext, 5, 80),
-		'DECISION_FORM_PAYPERFORMER' => cot_inputbox('text', 'payperformer', $payperformer),
-		'DECISION_FORM_PAYEMPLOYER' => cot_inputbox('text', 'payemployer', $payemployer),
+		'DECISION_FORM_TEXT' => cot_textarea('rdecisiontext', $rtext ?? '', 5, 80),
+		'DECISION_FORM_PAYPERFORMER' => cot_inputbox('text', 'payperformer', $payPerformer ?? 0),
+		'DECISION_FORM_PAYEMPLOYER' => cot_inputbox('text', 'payemployer', $payEmployer ?? 0),
 	));
 	
 	cot_display_messages($t, 'MAIN.DECISION');
